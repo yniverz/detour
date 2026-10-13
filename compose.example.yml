@@ -1,0 +1,28 @@
+# Example deployment. Copy to compose.yml and adjust.
+# Create the key file first (the container runs as UID 65532, so it must be able to read it):
+#   openssl rand -hex 32 > detour_keys.txt && sudo chown 65532:65532 detour_keys.txt && sudo chmod 400 detour_keys.txt
+services:
+  detour:
+    image: ghcr.io/yniverz/detour:latest
+    container_name: detour
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      # Publish only where your front proxy can reach it, e.g. a LAN address.
+      - "8080:8080"
+    environment:
+      DETOUR_KEYS_FILE: /run/secrets/detour_keys
+      DETOUR_ALLOWED_TARGETS: "10.0.0.0/8 192.168.0.0/16"
+      # DETOUR_TRUSTED_SOURCES: "10.0.0.2/32"     # front proxy address(es)
+      # DETOUR_ALLOW_INSECURE_TLS: "true"          # allow X-Detour-Insecure for self-signed upstreams
+      # DETOUR_FAIL_STATUS: "502,503,504"
+      DETOUR_ADMIN_LISTEN: "127.0.0.1:9090"         # /healthz and /metrics, container-local
+      DETOUR_LOG_FORMAT: json
+    secrets:
+      - detour_keys
+
+secrets:
+  detour_keys:
+    file: ./detour_keys.txt
