@@ -185,6 +185,8 @@ detour refuses to start without keys (or `DETOUR_AUTH_DISABLED=true`) and withou
 |---|---|---|
 | `DETOUR_LISTEN` | `:8080` | Proxy listener |
 | `DETOUR_TLS_CERT_FILE` / `DETOUR_TLS_KEY_FILE` | – | Serve the proxy listener over TLS |
+| `DETOUR_TLS_SELF_SIGNED` | `false` | Serve the proxy listener over TLS with a certificate generated in memory at startup (new key on every start; SHA-256 fingerprint is logged). Cannot be combined with the cert/key files |
+| `DETOUR_TLS_SELF_SIGNED_HOSTS` | hostname, `localhost`, local IPs | Names and IPs put into the self-signed certificate |
 | `DETOUR_ADMIN_LISTEN` | – (off) | Admin listener with `GET /healthz` and `GET /metrics`, e.g. `127.0.0.1:9090` |
 | `DETOUR_READ_HEADER_TIMEOUT` | `10s` | Client request header timeout |
 | `DETOUR_IDLE_TIMEOUT` | `120s` | Client keep-alive timeout |
@@ -254,6 +256,21 @@ Whatever the front proxy: it must **set (overwrite)** the detour headers rather 
 and detour should only be reachable through it (bind to an internal network, use `DETOUR_TRUSTED_SOURCES`).
 
 ---
+
+## Encrypting the hop to detour
+
+By default the front proxy talks plain HTTP to detour. If that hop crosses a network you do not fully
+trust, serve detour over TLS:
+
+* **Own certificate:** `DETOUR_TLS_CERT_FILE` + `DETOUR_TLS_KEY_FILE` (e.g. from an internal CA) – the front
+  proxy can then verify it properly.
+* **Self-signed, zero setup:** `DETOUR_TLS_SELF_SIGNED=true`. Point the front proxy at `https://<detour>:8080`
+  and disable certificate verification for that target (NetBird: *Skip TLS verify*; Traefik:
+  `serversTransport` with `insecureSkipVerify`; Caddy: `transport http { tls_insecure_skip_verify }`).
+  This protects against passive sniffing on the network. Because the front proxy does not verify the
+  certificate, it does not protect against an active man-in-the-middle; use your own certificate for that.
+
+The hop from detour to the upstream is encrypted when the target URL uses `https://`.
 
 ## Operations
 

@@ -75,3 +75,18 @@ func TestInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestSelfSignedTLS(t *testing.T) {
+	base := map[string]string{"DETOUR_KEYS": "k", "DETOUR_ALLOWED_TARGETS": "10.0.0.0/8", "DETOUR_TLS_SELF_SIGNED": "true", "DETOUR_TLS_SELF_SIGNED_HOSTS": "detour.lan 10.0.0.9"}
+	c, err := LoadFrom(envMap(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.TLSEnabled() || len(c.TLSSelfSigHosts) != 2 {
+		t.Errorf("self-signed config = %+v", c)
+	}
+	base["DETOUR_TLS_CERT_FILE"], base["DETOUR_TLS_KEY_FILE"] = "/c.pem", "/k.pem"
+	if _, err := LoadFrom(envMap(base)); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Errorf("combining self-signed with cert files must fail, got %v", err)
+	}
+}

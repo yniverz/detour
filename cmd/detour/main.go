@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/yniverz/detour/internal/config"
 	"github.com/yniverz/detour/internal/proxy"
+	"github.com/yniverz/detour/internal/selfsigned"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -69,6 +71,18 @@ func run() error {
 		IdleTimeout:       cfg.IdleTimeout,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
+	if cfg.TLSSelfSigned {
+		hosts := cfg.TLSSelfSigHosts
+		if len(hosts) == 0 {
+			hosts = selfsigned.DefaultHosts()
+		}
+		cert, err := selfsigned.Generate(hosts, time.Now())
+		if err != nil {
+			return fmt.Errorf("generating self-signed certificate: %w", err)
+		}
+		proxyServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+		log.Info("generated self-signed certificate", "names", selfsigned.Describe(cert), "sha256", selfsigned.Fingerprint(cert))
+	}
 	servers := []*http.Server{proxyServer}
 
 	if cfg.AdminListen != "" {
@@ -94,12 +108,12 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		tlsOn := i == 0 && cfg.TLSCertFile != ""
+		tlsOn := i == 0 && cfg.TLSEnabled()
 		log.Info("listening", "addr", ln.Addr().String(), "role", map[bool]string{true: "proxy", false: "admin"}[i == 0], "tls", tlsOn, "version", version)
 		go func(s *http.Server, ln net.Listener, tlsOn bool) {
 			var err error
 			if tlsOn {
-				err = s.ServeTLS(ln, cfg.TLSCertFile, cfg.TLSKeyFile)
+				err = s.ServeTLS(ln, cfg.TLSCertFile, cfg.TLSKeyFile) // empty paths use TLSConfig.Certificates
 			} else {
 				err = s.Serve(ln)
 			}

@@ -35,6 +35,8 @@ type Config struct {
 	Listen            string
 	TLSCertFile       string
 	TLSKeyFile        string
+	TLSSelfSigned     bool
+	TLSSelfSigHosts   []string
 	AdminListen       string
 	ReadHeaderTimeout time.Duration
 	IdleTimeout       time.Duration
@@ -80,6 +82,9 @@ type Config struct {
 	ExposeUpstream bool
 }
 
+// TLSEnabled reports whether the proxy listener serves HTTPS.
+func (c *Config) TLSEnabled() bool { return c.TLSSelfSigned || c.TLSCertFile != "" }
+
 // Header names derived from the prefix.
 func (c *Config) HeaderTarget() string           { return c.HeaderPrefix + "Target" }
 func (c *Config) HeaderKey() string              { return c.HeaderPrefix + "Key" }
@@ -103,6 +108,8 @@ func LoadFrom(env Getenv) (*Config, error) {
 		Listen:            p.str("DETOUR_LISTEN", ":8080"),
 		TLSCertFile:       p.str("DETOUR_TLS_CERT_FILE", ""),
 		TLSKeyFile:        p.str("DETOUR_TLS_KEY_FILE", ""),
+		TLSSelfSigned:     p.boolean("DETOUR_TLS_SELF_SIGNED", false),
+		TLSSelfSigHosts:   p.list("DETOUR_TLS_SELF_SIGNED_HOSTS"),
 		AdminListen:       p.str("DETOUR_ADMIN_LISTEN", ""),
 		ReadHeaderTimeout: p.dur("DETOUR_READ_HEADER_TIMEOUT", 10*time.Second),
 		IdleTimeout:       p.dur("DETOUR_IDLE_TIMEOUT", 120*time.Second),
@@ -169,6 +176,9 @@ func (c *Config) Validate() error {
 	}
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
 		errs = append(errs, errors.New("DETOUR_TLS_CERT_FILE and DETOUR_TLS_KEY_FILE must be set together"))
+	}
+	if c.TLSSelfSigned && c.TLSCertFile != "" {
+		errs = append(errs, errors.New("DETOUR_TLS_SELF_SIGNED cannot be combined with DETOUR_TLS_CERT_FILE/DETOUR_TLS_KEY_FILE"))
 	}
 	if c.HeaderPrefix == "" || !validHeaderToken(c.HeaderPrefix) {
 		errs = append(errs, fmt.Errorf("DETOUR_HEADER_PREFIX %q is not a valid header name prefix", c.HeaderPrefix))
