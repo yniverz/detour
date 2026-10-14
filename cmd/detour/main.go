@@ -19,6 +19,7 @@ import (
 	"github.com/yniverz/detour/internal/config"
 	"github.com/yniverz/detour/internal/proxy"
 	"github.com/yniverz/detour/internal/selfsigned"
+	"github.com/yniverz/detour/internal/sniff"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -71,17 +72,16 @@ func run() error {
 		IdleTimeout:       cfg.IdleTimeout,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	if cfg.TLSSelfSigned {
-		hosts := cfg.TLSSelfSigHosts
-		if len(hosts) == 0 {
-			hosts = selfsigned.DefaultHosts()
-		}
-		cert, err := selfsigned.Generate(hosts, time.Now())
+	if cfg.TLSEnabled() {
+		cert, err := loadCertificate(cfg, log)
 		if err != nil {
-			return fmt.Errorf("generating self-signed certificate: %w", err)
+			return err
 		}
-		proxyServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
-		log.Info("generated self-signed certificate", "names", selfsigned.Describe(cert), "sha256", selfsigned.Fingerprint(cert))
+		proxyServer.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+			NextProtos:   []string{"h2", "http/1.1"},
+		}
 	}
 	servers := []*http.Server{proxyServer}
 
@@ -108,19 +108,21 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		tlsOn := i == 0 && cfg.TLSEnabled()
-		log.Info("listening", "addr", ln.Addr().String(), "role", map[bool]string{true: "proxy", false: "admin"}[i == 0], "tls", tlsOn, "version", version)
-		go func(s *http.Server, ln net.Listener, tlsOn bool) {
-			var err error
-			if tlsOn {
-				err = s.ServeTLS(ln, cfg.TLSCertFile, cfg.TLSKeyFile) // empty paths use TLSConfig.Certificates
+		mode := "http"
+		if i == 0 && cfg.TLSEnabled() {
+			if cfg.TLSAllowPlain {
+				// TLS and plain HTTP on the same port, decided per connection.
+				ln, mode = sniff.New(ln, s.TLSConfig, cfg.ReadHeaderTimeout), "https+http"
 			} else {
-				err = s.Serve(ln)
+				ln, mode = tls.NewListener(ln, s.TLSConfig), "https"
 			}
-			if !errors.Is(err, http.ErrServerClosed) {
+		}
+		log.Info("listening", "addr", ln.Addr().String(), "role", map[bool]string{true: "proxy", false: "admin"}[i == 0], "protocols", mode, "version", version)
+		go func(s *http.Server, ln net.Listener) {
+			if err := s.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 				errc <- err
 			}
-		}(s, ln, tlsOn)
+		}(s, ln)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -137,6 +139,28 @@ func run() error {
 		_ = s.Shutdown(sctx)
 	}
 	return nil
+}
+
+// loadCertificate returns the configured certificate files or a freshly
+// generated self-signed certificate.
+func loadCertificate(cfg *config.Config, log *slog.Logger) (tls.Certificate, error) {
+	if !cfg.TLSSelfSigned {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return tls.Certificate{}, fmt.Errorf("loading TLS certificate: %w", err)
+		}
+		return cert, nil
+	}
+	hosts := cfg.TLSSelfSigHosts
+	if len(hosts) == 0 {
+		hosts = selfsigned.DefaultHosts()
+	}
+	cert, err := selfsigned.Generate(hosts, time.Now())
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("generating self-signed certificate: %w", err)
+	}
+	log.Info("generated self-signed certificate", "names", selfsigned.Describe(cert), "sha256", selfsigned.Fingerprint(cert))
+	return cert, nil
 }
 
 func newLogger(cfg *config.Config) *slog.Logger {

@@ -37,6 +37,7 @@ type Config struct {
 	TLSKeyFile        string
 	TLSSelfSigned     bool
 	TLSSelfSigHosts   []string
+	TLSAllowPlain     bool // also accept plain HTTP on the TLS port
 	AdminListen       string
 	ReadHeaderTimeout time.Duration
 	IdleTimeout       time.Duration
@@ -110,6 +111,7 @@ func LoadFrom(env Getenv) (*Config, error) {
 		TLSKeyFile:        p.str("DETOUR_TLS_KEY_FILE", ""),
 		TLSSelfSigned:     p.boolean("DETOUR_TLS_SELF_SIGNED", false),
 		TLSSelfSigHosts:   p.list("DETOUR_TLS_SELF_SIGNED_HOSTS"),
+		TLSAllowPlain:     p.boolean("DETOUR_TLS_ALLOW_PLAIN", false),
 		AdminListen:       p.str("DETOUR_ADMIN_LISTEN", ""),
 		ReadHeaderTimeout: p.dur("DETOUR_READ_HEADER_TIMEOUT", 10*time.Second),
 		IdleTimeout:       p.dur("DETOUR_IDLE_TIMEOUT", 120*time.Second),
@@ -179,6 +181,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TLSSelfSigned && c.TLSCertFile != "" {
 		errs = append(errs, errors.New("DETOUR_TLS_SELF_SIGNED cannot be combined with DETOUR_TLS_CERT_FILE/DETOUR_TLS_KEY_FILE"))
+	}
+	if c.TLSAllowPlain && !c.TLSEnabled() {
+		errs = append(errs, errors.New("DETOUR_TLS_ALLOW_PLAIN requires TLS (DETOUR_TLS_SELF_SIGNED or DETOUR_TLS_CERT_FILE/DETOUR_TLS_KEY_FILE)"))
 	}
 	if c.HeaderPrefix == "" || !validHeaderToken(c.HeaderPrefix) {
 		errs = append(errs, fmt.Errorf("DETOUR_HEADER_PREFIX %q is not a valid header name prefix", c.HeaderPrefix))

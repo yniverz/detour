@@ -90,3 +90,14 @@ func TestSelfSignedTLS(t *testing.T) {
 		t.Errorf("combining self-signed with cert files must fail, got %v", err)
 	}
 }
+
+func TestAllowPlainRequiresTLS(t *testing.T) {
+	env := map[string]string{"DETOUR_KEYS": "k", "DETOUR_ALLOWED_TARGETS": "10.0.0.0/8", "DETOUR_TLS_ALLOW_PLAIN": "true"}
+	if _, err := LoadFrom(envMap(env)); err == nil || !strings.Contains(err.Error(), "requires TLS") {
+		t.Errorf("allow plain without TLS must fail, got %v", err)
+	}
+	env["DETOUR_TLS_SELF_SIGNED"] = "true"
+	if c, err := LoadFrom(envMap(env)); err != nil || !c.TLSAllowPlain {
+		t.Errorf("allow plain with self-signed: %v", err)
+	}
+}

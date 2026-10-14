@@ -187,6 +187,7 @@ detour refuses to start without keys (or `DETOUR_AUTH_DISABLED=true`) and withou
 | `DETOUR_TLS_CERT_FILE` / `DETOUR_TLS_KEY_FILE` | – | Serve the proxy listener over TLS |
 | `DETOUR_TLS_SELF_SIGNED` | `false` | Serve the proxy listener over TLS with a certificate generated in memory at startup (new key on every start; SHA-256 fingerprint is logged). Cannot be combined with the cert/key files |
 | `DETOUR_TLS_SELF_SIGNED_HOSTS` | hostname, `localhost`, local IPs | Names and IPs put into the self-signed certificate |
+| `DETOUR_TLS_ALLOW_PLAIN` | `false` | With TLS enabled, also accept plain HTTP **on the same port** (detected per connection from the first byte) |
 | `DETOUR_ADMIN_LISTEN` | – (off) | Admin listener with `GET /healthz` and `GET /metrics`, e.g. `127.0.0.1:9090` |
 | `DETOUR_READ_HEADER_TIMEOUT` | `10s` | Client request header timeout |
 | `DETOUR_IDLE_TIMEOUT` | `120s` | Client keep-alive timeout |
@@ -269,6 +270,10 @@ trust, serve detour over TLS:
   `serversTransport` with `insecureSkipVerify`; Caddy: `transport http { tls_insecure_skip_verify }`).
   This protects against passive sniffing on the network. Because the front proxy does not verify the
   certificate, it does not protect against an active man-in-the-middle; use your own certificate for that.
+
+To migrate front-proxy routes gradually, set `DETOUR_TLS_ALLOW_PLAIN=true`: the same port then serves
+both `https://` and `http://`, so each route can switch independently. Leave it off once everything uses
+HTTPS, otherwise the plain path stays available on the network.
 
 The hop from detour to the upstream is encrypted when the target URL uses `https://`.
 
